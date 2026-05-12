@@ -1,0 +1,22 @@
+﻿{
+    "source_dir":  "C:\\Users\\cleme\\Desktop\\Timelaps_Bambu\\Timelaps_Bambu_Brut",
+    "dest_dir":  "C:\\Users\\cleme\\Desktop\\Timelaps_Bambu\\Timelaps_renomé",
+    "rename_pattern":  "BambuLab_X1C_{date}_{time}",
+    "processed_state_file":  "processed_videos.json",
+    "youtube":  {
+                    "client_secrets_file":  "client_secret.json",
+                    "credentials_file":  "youtube_credentials.json",
+                    "default_title":  "Timelaps X1C",
+                    "default_description":  "Welcome to Elistas_Print!",
+                    "privacy_status":  "private",
+                    "tags":  [
+                                 "Here",
+                                 "you’ll find satisfying 3D printing timelapses",
+                                 "print-in-progress videos",
+                                 "and sometimes projects",
+                                 "tests",
+                                 "or small improvements related to the world of 3D printing."
+                             ],
+                    "category_id":  "If you enjoy 3D prints, maker content, and smooth timelapse videos, make sure to subscribe to follow the next creations on Elistas_Print."
+                }
+}

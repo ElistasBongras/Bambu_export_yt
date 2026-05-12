@@ -1,0 +1,15 @@
+{
+  "source_dir": "C:/Users/cleme/BambuLab/Timelapses",
+  "dest_dir": "C:/Users/cleme/BambuLab/TimelapsesRenommes",
+  "rename_pattern": "BambuLab_X1C_{date}_{time}",
+  "processed_state_file": "processed_videos.json",
+  "youtube": {
+    "client_secrets_file": "client_secrets.json",
+    "credentials_file": "youtube_credentials.json",
+    "default_title": "Timelapse imprimante 3D BambuLab X1C - {date}",
+    "default_description": "Timelapse automatique BambuLab X1C uploadé sur YouTube.",
+    "privacy_status": "private",
+    "tags": ["BambuLab", "X1C", "impression 3D", "timelapse"],
+    "category_id": "28"
+  }
+}
