@@ -57,6 +57,9 @@ Vérifiez que les chemins suivants sont corrects :
 - `youtube.client_secrets_file` : `client_secrets.json`
 - `youtube.credentials_file` : `youtube_credentials.json`
 
+Note : vous n'avez généralement pas besoin de créer manuellement `youtube_credentials.json`.
+Il est généré automatiquement lors du premier lancement du script, au moment où vous autorisez l'accès YouTube.
+
 ### Étape 6 : Lancer le traitement
 
 Dans PowerShell, tapez :
@@ -76,6 +79,28 @@ Lors du premier upload, un lien ou une fenêtre s'ouvre.
 1. Connectez-vous avec votre compte Google YouTube.
 2. Autorisez l'application à accéder à votre compte.
 3. Le script enregistre un token dans `youtube_credentials.json`.
+
+## Interface graphique
+
+Pour utiliser l'interface graphique Python, lancez :
+
+```powershell
+python bambu_export_yt_gui.py
+```
+
+Ou utilisez le lanceur PowerShell :
+
+```powershell
+.\run_gui.ps1
+```
+
+L'interface permet de :
+- choisir les dossiers source et destination
+- configurer les identifiants YouTube
+- sauvegarder la configuration dans `config.json`
+- démarrer une exécution, une simulation, ou une surveillance continue
+- ouvrir les dossiers source et destination dans l'explorateur
+- afficher la liste des vidéos déjà traitées
 
 ## Option manuelle
 

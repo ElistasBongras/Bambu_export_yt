@@ -27,7 +27,7 @@ VIDEO_EXTENSIONS = [".mp4", ".mov", ".mkv", ".avi"]
 
 
 def load_json(path: Path) -> Dict:
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 
@@ -97,7 +97,10 @@ def authorize_youtube(client_secrets_file: Path, token_file: Path) -> build:
         creds.refresh(Request())
     else:
         flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_file), SCOPES)
-        creds = flow.run_console()
+        try:
+            creds = flow.run_local_server(port=0)
+        except Exception:
+            creds = flow.run_console()
     with token_file.open("w", encoding="utf-8") as token:
         token.write(creds.to_json())
     return build("youtube", "v3", credentials=creds)

@@ -46,7 +46,7 @@ $config = [PSCustomObject]@{
 }
 
 $configPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) 'config.json'
-$config | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding UTF8
+$config | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8NoBom
 
 Write-Host "Fichier de configuration créé : $configPath" -ForegroundColor Green
 Write-Host 'Installation des dépendances Python...' -ForegroundColor Cyan
