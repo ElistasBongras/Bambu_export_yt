@@ -7,7 +7,7 @@
     "client_secrets_file": "client_secrets.json",
     "credentials_file": "youtube_credentials.json",
     "default_title": "Timelapse imprimante 3D BambuLab X1C - {date}",
-    "default_description": "Timelapse automatique BambuLab X1C uploadé sur YouTube.",
+    "default_description": "Welcome to Elistas_Print!\nHere, you’ll find satisfying 3D printing timelapses, print-in-progress videos, and sometimes projects, tests, or small improvements related to the world of 3D printing.\n\nIf you enjoy 3D prints, maker content, and smooth timelapse videos, make sure to subscribe to follow the next creations on Elistas_Print.\n\nChannel: Elistas_Print\nTheme: 3D Printing | Timelapse | Maker\n\n#3DPrinting #Timelapse #Maker #ElistasPrint #3DPrint",
     "tags": [
       "BambuLab",
       "X1C",
@@ -15,7 +15,10 @@
       "timelapse"
     ],
     "privacy_status": "public",
-    "category_id": "28"
+    "category_id": "28",
+    "playlist_id": "Bambu Print Timelaps",
+    "max_uploads_per_day": 13,
+    "upload_history_file": "upload_history.json"
   },
-  "watch_interval": 30
+  "watch_interval": 600
 }

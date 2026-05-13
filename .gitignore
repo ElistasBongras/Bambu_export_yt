@@ -159,6 +159,8 @@ venv.bak/
 client_secret.json
 client_secrets.json
 youtube_credentials.json
+upload_history.json
+processed_videos.json
 
 
 # Spyder project settings

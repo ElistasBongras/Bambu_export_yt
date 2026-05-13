@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -114,6 +114,8 @@ def upload_video(
     tags: List[str],
     privacy_status: str,
     category_id: str,
+    progress_callback=None,
+    playlist_id: Optional[str] = None,
 ) -> Dict:
     body = {
         "snippet": {
@@ -131,8 +133,31 @@ def upload_video(
     response = None
     while response is None:
         status, response = request.next_chunk()
-        if status:
+        if status and progress_callback:
+            progress_callback(int(status.progress() * 100))
+        elif status:
             logging.info("Upload progress : %s%%", int(status.progress() * 100))
+    video_id = response.get("id")
+    
+    # Add to playlist if specified
+    if playlist_id and video_id:
+        try:
+            youtube.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": playlist_id,
+                        "resourceId": {
+                            "kind": "youtube#video",
+                            "videoId": video_id,
+                        },
+                    }
+                },
+            ).execute()
+            logging.info("Vidéo ajoutée à la playlist %s", playlist_id)
+        except Exception as e:
+            logging.warning("Impossible d'ajouter à la playlist : %s", e)
+    
     return response
 
 
@@ -142,18 +167,104 @@ def load_processed_state(state_file: Path) -> Dict[str, str]:
     return load_json(state_file)
 
 
+def load_upload_history(history_file: Path) -> List[Dict[str, str]]:
+    if not history_file.exists():
+        return []
+    try:
+        history = load_json(history_file)
+        return history if isinstance(history, list) else []
+    except Exception as exc:
+        logging.warning("Impossible de charger l'historique des uploads : %s", exc)
+        return []
+
+
+def save_upload_history(history_file: Path, history: List[Dict[str, str]]) -> None:
+    save_json(history_file, history)
+
+
+def prune_upload_history(history: List[Dict[str, str]], now: Optional[datetime] = None) -> List[Dict[str, str]]:
+    if now is None:
+        now = datetime.utcnow()
+    return [
+        entry
+        for entry in history
+        if (now - datetime.fromisoformat(entry["timestamp"])) < timedelta(days=1)
+    ]
+
+
+def get_upload_history_file(config: Dict) -> Path:
+    return Path(config["youtube"].get("upload_history_file", "upload_history.json")).expanduser()
+
+
+def get_next_upload_available_time(history: List[Dict[str, str]], max_uploads_per_day: int) -> Optional[datetime]:
+    recent = prune_upload_history(history)
+    if len(recent) < max_uploads_per_day:
+        return None
+    sorted_history = sorted(recent, key=lambda entry: entry["timestamp"])
+    return datetime.fromisoformat(sorted_history[0]["timestamp"]) + timedelta(days=1)
+
+
+def record_upload(history_file: Path, video_path: Path, video_id: Optional[str]) -> None:
+    now = datetime.utcnow()
+    history = load_upload_history(history_file)
+    history = prune_upload_history(history, now)
+    history.append({
+        "timestamp": now.isoformat(),
+        "source": str(video_path),
+        "video_id": video_id or "",
+    })
+    save_upload_history(history_file, history)
+
+
+def wait_for_upload_slot(history_file: Path, max_uploads_per_day: int, stop_event=None) -> bool:
+    while True:
+        history = load_upload_history(history_file)
+        history = prune_upload_history(history)
+        save_upload_history(history_file, history)
+        if len(history) < max_uploads_per_day:
+            return True
+
+        next_time = get_next_upload_available_time(history, max_uploads_per_day)
+        if next_time is None:
+            return True
+
+        delay = (next_time - datetime.utcnow()).total_seconds()
+        if delay <= 0:
+            return True
+
+        logging.info(
+            "Limite quotidienne d'uploads dépassée (%s vidéos sur les dernières 24h). Reprise dans %s.",
+            max_uploads_per_day,
+            str(timedelta(seconds=int(delay))),
+        )
+        if stop_event is not None and stop_event.is_set():
+            return False
+        time.sleep(min(delay, 60))
+
+
 def merge_defaults(config: Dict, defaults: Dict) -> Dict:
     merged = defaults.copy()
     merged.update(config)
     return merged
 
 
-def process_videos(config: Dict, dry_run: bool = False) -> None:
+def process_videos(config: Dict, dry_run: bool = False, progress_callback=None, playlist_id: Optional[str] = None, stop_event=None) -> None:
+    start_time = time.time()
     source_dir = Path(config["source_dir"]).expanduser()
     dest_dir = Path(config.get("dest_dir", config["source_dir"])).expanduser()
     state_file = Path(config.get("processed_state_file", "processed_videos.json")).expanduser()
 
     state = load_processed_state(state_file)
+    upload_history_file = get_upload_history_file(config)
+    upload_history_file.parent.mkdir(parents=True, exist_ok=True)
+    max_uploads_per_day = int(config["youtube"].get("max_uploads_per_day", 13) or 13)
+    if max_uploads_per_day <= 0:
+        max_uploads_per_day = 13
+
+    history = load_upload_history(upload_history_file)
+    history = prune_upload_history(history)
+    save_upload_history(upload_history_file, history)
+
     videos = list_video_files(source_dir)
     if not videos:
         logging.info("Aucune vidéo trouvée dans %s", source_dir)
@@ -164,15 +275,15 @@ def process_videos(config: Dict, dry_run: bool = False) -> None:
         Path(config["youtube"]["credentials_file"]).expanduser(),
     )
 
+    processed_count = 0
     for video_path in videos:
         if str(video_path) in state:
             logging.debug("Déjà traité : %s", video_path)
             continue
 
-        target_path = rename_and_move_file(video_path, dest_dir, config.get("rename_pattern", "BambuLab_X1C_{date}_{time}"))
         title = config["youtube"].get(
             "default_title", "Timelapse BambuLab X1C {date}"
-        ).format(date=datetime.fromtimestamp(target_path.stat().st_mtime).strftime("%Y-%m-%d"))
+        ).format(date=datetime.fromtimestamp(video_path.stat().st_mtime).strftime("%Y-%m-%d"))
         description = config["youtube"].get(
             "default_description", "Timelapse imprimante 3D BambuLab X1C"
         )
@@ -181,24 +292,37 @@ def process_videos(config: Dict, dry_run: bool = False) -> None:
         category_id = config["youtube"].get("category_id", "28")
 
         if dry_run:
-            logging.info("[DRY RUN] Prêt à uploader : %s", target_path)
+            logging.info("[DRY RUN] Prêt à uploader : %s", video_path)
             logging.info("Titre : %s", title)
             logging.info("Description : %s", description)
         else:
-            logging.info("Upload de %s vers YouTube", target_path)
-            upload_video(
+            if not wait_for_upload_slot(upload_history_file, max_uploads_per_day, stop_event):
+                logging.info("Arrêt demandé avant reprise des uploads.")
+                break
+            logging.info("Upload de %s vers YouTube", video_path)
+            response = upload_video(
                 youtube,
-                target_path,
+                video_path,
                 title,
                 description,
                 tags,
                 privacy_status,
                 category_id,
+                progress_callback,
+                playlist_id,
             )
-            logging.info("Upload terminé : %s", target_path)
+            logging.info("Upload terminé : %s", video_path)
+            record_upload(upload_history_file, video_path, response.get("id") if response else None)
+            target_path = rename_and_move_file(video_path, dest_dir, config.get("rename_pattern", "BambuLab_X1C_{date}_{time}"))
+            state[str(video_path)] = str(target_path)
+            save_json(state_file, state)
+        processed_count += 1
 
-        state[str(video_path)] = str(target_path)
-        save_json(state_file, state)
+    end_time = time.time()
+    total_time = end_time - start_time
+    if progress_callback:
+        progress_callback(100)  # Ensure progress reaches 100%
+    logging.info("Métriques : %d vidéos traitées en %.2f secondes (%.2f s/vidéo)", processed_count, total_time, total_time / max(processed_count, 1))
 
 
 def parse_args() -> argparse.Namespace:

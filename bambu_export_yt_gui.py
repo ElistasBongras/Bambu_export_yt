@@ -23,6 +23,9 @@ DEFAULT_CONFIG = {
         "privacy_status": "private",
         "tags": ["BambuLab", "X1C", "impression 3D", "timelapse"],
         "category_id": "28",
+        "playlist_id": "",
+        "max_uploads_per_day": 13,
+        "upload_history_file": "upload_history.json",
     },
 }
 
@@ -39,13 +42,18 @@ class GuiApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("BambuLab X1C Timelapse YouTube")
-        self.geometry("960x780")
+        self.geometry("960x900")
         self.minsize(920, 740)
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.config_values = {}
         self.log_queue = queue.Queue()
         self.worker_thread = None
         self.stop_event = threading.Event()
+        self.progress_var = tk.DoubleVar()
+        self.dark_mode = False
+        self.config_collapsed = False
+        self.style = ttk.Style()
+        self.default_theme = self.style.theme_use()
 
         self.create_widgets()
         self.load_config()
@@ -62,6 +70,7 @@ class GuiApp(tk.Tk):
         config_frame = ttk.LabelFrame(main_frame, text="Configuration")
         config_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
         config_frame.columnconfigure(1, weight=1)
+        config_frame.rowconfigure(12, weight=1)
 
         run_frame = ttk.LabelFrame(main_frame, text="Actions")
         run_frame.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
@@ -75,6 +84,7 @@ class GuiApp(tk.Tk):
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
+        self.config_frame = config_frame
         self.create_config_form(config_frame)
         self.create_run_buttons(run_frame)
         self.create_log_area(log_frame)
@@ -92,6 +102,9 @@ class GuiApp(tk.Tk):
             "tags": tk.StringVar(value=", ".join(DEFAULT_CONFIG["youtube"]["tags"])),
             "privacy_status": tk.StringVar(value=DEFAULT_CONFIG["youtube"]["privacy_status"]),
             "category_id": tk.StringVar(value=DEFAULT_CONFIG["youtube"]["category_id"]),
+            "playlist_id": tk.StringVar(value=DEFAULT_CONFIG["youtube"]["playlist_id"]),
+            "max_uploads_per_day": tk.StringVar(value=str(DEFAULT_CONFIG["youtube"]["max_uploads_per_day"])),
+            "upload_history_file": tk.StringVar(value=DEFAULT_CONFIG["youtube"]["upload_history_file"]),
             "watch_interval": tk.StringVar(value="0"),
         }
 
@@ -106,6 +119,9 @@ class GuiApp(tk.Tk):
             ("Tags (séparés par virgule)", "tags", False),
             ("Statut confidentialité", "privacy_status", False),
             ("ID catégorie YouTube", "category_id", False),
+            ("ID playlist YouTube", "playlist_id", False),
+            ("Téléversements max / 24h", "max_uploads_per_day", False),
+            ("Fichier historique uploads", "upload_history_file", False),
             ("Intervalle de surveillance (s)", "watch_interval", False),
         ]
 
@@ -121,7 +137,7 @@ class GuiApp(tk.Tk):
         description_label = ttk.Label(parent, text="Description par défaut")
         description_label.grid(row=len(rows), column=0, sticky="nw", pady=4, padx=2)
         self.description_text = scrolledtext.ScrolledText(parent, width=72, height=5, wrap=tk.WORD)
-        self.description_text.grid(row=len(rows), column=1, columnspan=2, sticky="w", pady=4, padx=2)
+        self.description_text.grid(row=len(rows), column=1, columnspan=2, sticky="nsew", pady=4, padx=2)
         self.description_text.insert("1.0", DEFAULT_CONFIG["youtube"]["default_description"])
 
         button_frame = ttk.Frame(parent)
@@ -130,6 +146,9 @@ class GuiApp(tk.Tk):
         save_btn.pack(side=tk.LEFT, padx=2)
         load_btn = ttk.Button(button_frame, text="Charger la configuration", command=self.load_config)
         load_btn.pack(side=tk.LEFT, padx=2)
+
+        self.toggle_config_button = ttk.Button(parent, text="Réduire configuration", command=self.toggle_config)
+        self.toggle_config_button.grid(row=len(rows) + 2, column=0, columnspan=3, sticky="ew", pady=4, padx=2)
 
     def create_run_buttons(self, parent):
         self.run_button = ttk.Button(parent, text="Exécuter une passe", command=self.run_once)
@@ -153,9 +172,19 @@ class GuiApp(tk.Tk):
         self.show_processed_button = ttk.Button(parent, text="Voir vidéos traitées", command=self.show_processed_videos)
         self.show_processed_button.grid(row=1, column=2, padx=4, pady=4)
 
+        # Progress bar
+        self.progress_bar = ttk.Progressbar(parent, variable=self.progress_var, maximum=100)
+        self.progress_bar.grid(row=2, column=0, columnspan=4, sticky="ew", padx=4, pady=4)
+
+        # Theme button only
+        self.theme_button = ttk.Button(parent, text="Thème sombre", command=self.toggle_theme)
+        self.theme_button.grid(row=3, column=0, columnspan=4, sticky="ew", padx=4, pady=4)
+
     def create_log_area(self, parent):
-        self.log_text = scrolledtext.ScrolledText(parent, width=106, height=18, wrap=tk.WORD, state=tk.DISABLED)
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        self.log_text = scrolledtext.ScrolledText(parent, wrap=tk.WORD, state=tk.DISABLED)
+        self.log_text.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
 
     def browse_value(self, key):
         if key in {"source_dir", "dest_dir"}:
@@ -193,6 +222,9 @@ class GuiApp(tk.Tk):
         self.entry_vars["tags"].set(", ".join(config.get("youtube", {}).get("tags", DEFAULT_CONFIG["youtube"]["tags"])))
         self.entry_vars["privacy_status"].set(config.get("youtube", {}).get("privacy_status", DEFAULT_CONFIG["youtube"]["privacy_status"]))
         self.entry_vars["category_id"].set(config.get("youtube", {}).get("category_id", DEFAULT_CONFIG["youtube"]["category_id"]))
+        self.entry_vars["playlist_id"].set(config.get("youtube", {}).get("playlist_id", DEFAULT_CONFIG["youtube"]["playlist_id"]))
+        self.entry_vars["max_uploads_per_day"].set(str(config.get("youtube", {}).get("max_uploads_per_day", DEFAULT_CONFIG["youtube"]["max_uploads_per_day"])))
+        self.entry_vars["upload_history_file"].set(config.get("youtube", {}).get("upload_history_file", DEFAULT_CONFIG["youtube"]["upload_history_file"]))
         self.entry_vars["watch_interval"].set(str(config.get("watch_interval", "0")))
 
     def get_config(self):
@@ -209,6 +241,9 @@ class GuiApp(tk.Tk):
                 "tags": [tag.strip() for tag in self.entry_vars["tags"].get().split(",") if tag.strip()],
                 "privacy_status": self.entry_vars["privacy_status"].get().strip(),
                 "category_id": self.entry_vars["category_id"].get().strip(),
+                "playlist_id": self.entry_vars["playlist_id"].get().strip(),
+                "max_uploads_per_day": int(self.entry_vars["max_uploads_per_day"].get().strip() or DEFAULT_CONFIG["youtube"]["max_uploads_per_day"]),
+                "upload_history_file": self.entry_vars["upload_history_file"].get().strip(),
             },
             "watch_interval": int(self.entry_vars["watch_interval"].get().strip() or 0),
         }
@@ -232,8 +267,15 @@ class GuiApp(tk.Tk):
         client_secrets_file = config.get("youtube", {}).get("client_secrets_file", "")
         if not client_secrets_file:
             raise ValueError("Le fichier client OAuth est requis.")
-        if not Path(client_secrets_file).exists():
+        # Résoudre le chemin relatif par rapport au répertoire du projet
+        client_secrets_path = Path(client_secrets_file)
+        if not client_secrets_path.is_absolute():
+            client_secrets_path = CONFIG_PATH.parent / client_secrets_file
+        if not client_secrets_path.exists():
             raise ValueError(f"Le fichier client OAuth est introuvable : {client_secrets_file}")
+        max_uploads_per_day = config.get("youtube", {}).get("max_uploads_per_day", 13)
+        if not isinstance(max_uploads_per_day, int) or max_uploads_per_day <= 0:
+            raise ValueError("Le nombre maximum de vidéos par jour doit être un entier positif.")
         return True
 
     def append_log(self, message):
@@ -280,14 +322,41 @@ class GuiApp(tk.Tk):
         if backend is None:
             messagebox.showerror("Erreur", f"Impossible de démarrer : {BACKEND_ERROR}")
             return
+        # Normaliser les chemins relatifs pour qu'ils soient absolus
+        config = self._normalize_config_paths(config)
         self.save_config()
         self.stop_event.clear()
+        self.progress_var.set(0)
         self.worker_thread = threading.Thread(target=self.worker, args=(config, dry_run, watch), daemon=True)
         self.worker_thread.start()
         self.run_button.config(state=tk.DISABLED)
         self.dry_run_button.config(state=tk.DISABLED)
         self.start_watch_button.config(state=tk.DISABLED)
         self.stop_button.config(state=tk.NORMAL)
+
+    def _normalize_config_paths(self, config: dict) -> dict:
+        """Convertir les chemins relatifs en chemins absolus."""
+        config_dir = CONFIG_PATH.parent
+        
+        # Normaliser les chemins principaux
+        if config.get("source_dir") and not Path(config["source_dir"]).is_absolute():
+            config["source_dir"] = str(config_dir / config["source_dir"])
+        if config.get("dest_dir") and not Path(config["dest_dir"]).is_absolute():
+            config["dest_dir"] = str(config_dir / config["dest_dir"])
+        if config.get("processed_state_file") and not Path(config["processed_state_file"]).is_absolute():
+            config["processed_state_file"] = str(config_dir / config["processed_state_file"])
+        
+        # Normaliser les chemins YouTube
+        if "youtube" in config:
+            youtube_config = config["youtube"]
+            if youtube_config.get("client_secrets_file") and not Path(youtube_config["client_secrets_file"]).is_absolute():
+                youtube_config["client_secrets_file"] = str(config_dir / youtube_config["client_secrets_file"])
+            if youtube_config.get("credentials_file") and not Path(youtube_config["credentials_file"]).is_absolute():
+                youtube_config["credentials_file"] = str(config_dir / youtube_config["credentials_file"])
+            if youtube_config.get("upload_history_file") and not Path(youtube_config["upload_history_file"]).is_absolute():
+                youtube_config["upload_history_file"] = str(config_dir / youtube_config["upload_history_file"])
+        
+        return config
 
     def worker(self, config, dry_run, watch):
         self.log_info("Tâche démarrée...")
@@ -305,10 +374,22 @@ class GuiApp(tk.Tk):
             formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
             queue_handler.setFormatter(formatter)
             if watch <= 0:
-                backend.process_videos(config, dry_run=dry_run)
+                backend.process_videos(
+                    config,
+                    dry_run=dry_run,
+                    progress_callback=self.update_progress,
+                    playlist_id=config["youtube"].get("playlist_id"),
+                    stop_event=self.stop_event,
+                )
             else:
                 while not self.stop_event.is_set():
-                    backend.process_videos(config, dry_run=dry_run)
+                    backend.process_videos(
+                        config,
+                        dry_run=dry_run,
+                        progress_callback=self.update_progress,
+                        playlist_id=config["youtube"].get("playlist_id"),
+                        stop_event=self.stop_event,
+                    )
                     self.log_info(f"Attente de {watch} secondes avant nouveau scan...")
                     for _ in range(watch):
                         if self.stop_event.is_set():
@@ -318,6 +399,7 @@ class GuiApp(tk.Tk):
             self.log_info(f"Erreur : {exc}")
         finally:
             self.log_info("Tâche terminée.")
+            self.progress_var.set(0)
             self.run_button.config(state=tk.NORMAL)
             self.dry_run_button.config(state=tk.NORMAL)
             self.start_watch_button.config(state=tk.NORMAL)
@@ -327,6 +409,49 @@ class GuiApp(tk.Tk):
         if self.worker_thread and self.worker_thread.is_alive():
             self.stop_event.set()
             self.log_info("Arrêt demandé...")
+
+    def toggle_theme(self):
+        self.dark_mode = not self.dark_mode
+        if self.dark_mode:
+            self.configure(bg="#2b2b2b")
+            self.theme_button.config(text="Thème clair")
+            self.style.theme_use('clam')
+            self.style.configure("TFrame", background="#2b2b2b")
+            self.style.configure("TLabelframe", background="#2b2b2b")
+            self.style.configure("TLabelframe.Label", background="#2b2b2b", foreground="#ffffff")
+            self.style.configure("TLabel", background="#2b2b2b", foreground="#ffffff")
+            self.style.configure("TButton", background="#4b4b4b", foreground="#ffffff")
+            self.style.map("TButton",
+                background=[('active', '#5a5a5a'), ('pressed', '#3a3a3a')],
+                foreground=[('active', '#ffffff'), ('pressed', '#ffffff')]
+            )
+            self.style.configure("TEntry", fieldbackground="#4b4b4b", foreground="#ffffff", background="#4b4b4b")
+            self.style.configure("Treeview", background="#2b2b2b", fieldbackground="#2b2b2b", foreground="#ffffff")
+            self.style.configure("Vertical.TScrollbar", background="#4b4b4b", troughcolor="#333333", arrowcolor="#ffffff")
+            self.style.configure("Dark.Horizontal.TProgressbar", troughcolor="#333333", background="#4b4b4b")
+            self.progress_bar.config(style="Dark.Horizontal.TProgressbar")
+            self.description_text.config(bg="#1e1e1e", fg="#ffffff", insertbackground="#ffffff")
+            self.log_text.config(bg="#1e1e1e", fg="#ffffff", insertbackground="#ffffff")
+        else:
+            self.configure(bg="SystemButtonFace")
+            self.theme_button.config(text="Thème sombre")
+            self.style.theme_use(self.default_theme)
+            self.progress_bar.config(style="Horizontal.TProgressbar")
+            self.description_text.config(bg="white", fg="black", insertbackground="black")
+            self.log_text.config(bg="white", fg="black", insertbackground="black")
+
+    def update_progress(self, value):
+        self.progress_var.set(value)
+        self.update_idletasks()
+
+    def toggle_config(self):
+        if self.config_collapsed:
+            self.config_frame.grid()
+            self.toggle_config_button.config(text="Réduire configuration")
+        else:
+            self.config_frame.grid_remove()
+            self.toggle_config_button.config(text="Afficher configuration")
+        self.config_collapsed = not self.config_collapsed
 
     def open_source_dir(self):
         source_dir = self.entry_vars["source_dir"].get().strip()
@@ -418,6 +543,10 @@ class QueueLoggingHandler(logging.Handler):
 
 
 def main():
+    # Changer le répertoire de travail vers le répertoire parent de l'exécutable
+    # pour que les chemins relatifs aux configs fonctionnent depuis dist/
+    os.chdir(Path(__file__).parent.parent)
+    
     if backend is None:
         message = (
             "Le module bambu_export_yt n'a pas pu être chargé.\n"

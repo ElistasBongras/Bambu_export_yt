@@ -98,6 +98,23 @@ L'interface permet de :
 - choisir les dossiers source et destination
 - configurer les identifiants YouTube
 - sauvegarder la configuration dans `config.json`
+
+## Exécutable autonome
+
+Pour une utilisation plus simple sans terminal, un exécutable Windows a été créé.
+
+ utilisez le fichier `Lancer_GUI.bat` pour un lancement facilité (il active l'environnement virtuel et lance le script Python directement).
+
+**Note :** L'exécutable ajuste automatiquement son répertoire de travail pour accéder aux fichiers de configuration dans le dossier parent. Assurez-vous que `config.json`, `client_secrets.json`, etc. sont présents dans `C:\Users\cleme\GitHub\Bambu_export_yt`.
+
+### Lancement direct avec Python
+
+Si vous préférez lancer directement avec Python :
+
+1. Ouvrez un terminal PowerShell dans le dossier du projet.
+2. Tapez : `python bambu_export_yt_gui.py`
+
+Ou utilisez le script PowerShell : `.\run_gui.ps1`
 - démarrer une exécution, une simulation, ou une surveillance continue
 - ouvrir les dossiers source et destination dans l'explorateur
 - afficher la liste des vidéos déjà traitées

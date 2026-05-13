@@ -10,6 +10,9 @@
     "default_description": "Timelapse automatique BambuLab X1C uploadé sur YouTube.",
     "privacy_status": "private",
     "tags": ["BambuLab", "X1C", "impression 3D", "timelapse"],
-    "category_id": "28"
+    "category_id": "28",
+    "playlist_id": "",
+    "max_uploads_per_day": 13,
+    "upload_history_file": "upload_history.json"
   }
 }
